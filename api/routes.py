@@ -7178,6 +7178,40 @@ def _provisional_title_from_prompt(prompt: str, fallback: str = "Untitled") -> s
     return title_from([{"role": "user", "content": text}], fallback) or fallback
 
 
+def _preserve_longer_persisted_display_messages_for_chat_start(s) -> None:
+    """Keep chat-start pending saves from shrinking the WebUI display transcript.
+
+    Context compression can leave the in-memory continuation session with a short
+    model context while the WebUI sidecar on disk still has the longer stitched
+    display transcript.  /api/chat/start only needs to persist pending stream
+    metadata, so it must not let that short in-memory context replace the longer
+    display history.
+    """
+    try:
+        persisted = Session.load(s.session_id)
+    except Exception:
+        persisted = None
+    if not persisted:
+        return
+    persisted_messages = list(getattr(persisted, "messages", None) or [])
+    current_messages = list(getattr(s, "messages", None) or [])
+    if len(persisted_messages) <= len(current_messages):
+        return
+
+    s.messages = persisted_messages
+    persisted_tool_calls = getattr(persisted, "tool_calls", None)
+    if isinstance(persisted_tool_calls, list):
+        s.tool_calls = list(persisted_tool_calls)
+    for attr in (
+        "compression_anchor_visible_idx",
+        "compression_anchor_message_key",
+        "compression_anchor_summary",
+    ):
+        value = getattr(persisted, attr, None)
+        if value is not None:
+            setattr(s, attr, value)
+
+
 def _prepare_chat_start_session_for_stream(
     s,
     *,
@@ -7205,6 +7239,7 @@ def _prepare_chat_start_session_for_stream(
     s.pending_user_message = msg
     s.pending_attachments = attachments
     s.pending_started_at = started_at if started_at is not None else time.time()
+    _preserve_longer_persisted_display_messages_for_chat_start(s)
     current_title = getattr(s, "title", None)
     if _is_default_or_empty_session_title(current_title):
         provisional_title = _provisional_title_from_prompt(msg, current_title or "Untitled")
