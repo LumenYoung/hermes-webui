@@ -1983,6 +1983,8 @@ from api.models import (
     import_cli_session,
     get_cli_sessions,
     get_cli_session_messages,
+    get_state_db_session_messages,
+    merge_session_messages_append_only,
     ensure_cron_project,
     is_cron_session,
 )
@@ -3396,8 +3398,16 @@ def handle_get(handler, parsed) -> bool:
             cli_meta = _lookup_cli_session_metadata(sid) if _session_requires_cli_metadata_lookup(s) else {}
             is_messaging_session = _is_messaging_session_record(s) or _is_messaging_session_record(cli_meta)
             cli_messages = []
+            state_db_messages = []
             if is_messaging_session:
                 cli_messages = get_cli_session_messages(sid)
+            elif load_messages:
+                state_db_messages = get_state_db_session_messages(sid)
+            elif not is_messaging_session:
+                # Metadata-only callers (frontend refresh polling) still need a
+                # reconciled count/timestamp so externally appended state.db
+                # messages can be detected without fetching the full transcript.
+                state_db_messages = get_state_db_session_messages(sid)
             _t2 = _time.monotonic()
             effective_model = (
                 _resolve_effective_session_model_for_display(s)
@@ -3413,11 +3423,25 @@ def handle_get(handler, parsed) -> bool:
             if load_messages:
                 if is_messaging_session and cli_messages:
                     sidecar_messages = getattr(s, "messages", []) or []
-                    _all_msgs = _merge_messaging_session_display_messages(sidecar_messages, cli_messages)
+                    # Recovery/aggregate sidecars can intentionally contain a
+                    # longer visible conversation than the single state.db
+                    # segment for this messaging session id. Prefer the longer
+                    # sidecar so repaired WebUI history is not hidden behind the
+                    # canonical per-segment transcript. When both sources carry
+                    # different slices of the same stitched conversation, merge
+                    # them chronologically and dedupe exact repeats.
+                    if sidecar_messages and sidecar_messages != cli_messages:
+                        _all_msgs = merge_session_messages_append_only(sidecar_messages, cli_messages)
+                    else:
+                        _all_msgs = sidecar_messages if len(sidecar_messages) > len(cli_messages) else cli_messages
                 else:
-                    _all_msgs = s.messages
+                    _all_msgs = merge_session_messages_append_only(s.messages, state_db_messages)
             else:
-                _all_msgs = []
+                if is_messaging_session and cli_messages:
+                    sidecar_messages = getattr(s, "messages", []) or []
+                    _all_msgs = merge_session_messages_append_only(sidecar_messages, cli_messages)
+                else:
+                    _all_msgs = merge_session_messages_append_only(getattr(s, "messages", []) or [], state_db_messages)
             if load_messages:
                 if msg_before is not None:
                     # Scroll-to-top paging: msg_before is a 0-based index into
@@ -3433,7 +3457,7 @@ def handle_get(handler, parsed) -> bool:
                 else:
                     _truncated_msgs = _all_msgs
             else:
-                _truncated_msgs = _all_msgs
+                _truncated_msgs = []
             # Resolve effective context_length with model-metadata fallback so
             # older sessions (pre-#1318) that have context_length=0 persisted
             # still render a meaningful indicator on load.  Mirrors the
@@ -3499,8 +3523,20 @@ def handle_get(handler, parsed) -> bool:
                 # messages already carry per-message tool metadata. Avoid sending
                 # the full historical list with a small tail window.
                 _session_tool_calls = []
+            _merged_message_count = len(_all_msgs)
+            _merged_last_message_at = 0
+            if _all_msgs:
+                try:
+                    _merged_last_message_at = max(
+                        float((m or {}).get("timestamp") or 0)
+                        for m in _all_msgs
+                        if isinstance(m, dict)
+                    )
+                except (TypeError, ValueError):
+                    _merged_last_message_at = 0
             raw = s.compact() | {
                 "messages": _truncated_msgs,
+                "message_count": _merged_message_count,
                 "tool_calls": _session_tool_calls,
                 "active_stream_id": getattr(s, "active_stream_id", None),
                 "pending_user_message": getattr(s, "pending_user_message", None),
@@ -3510,6 +3546,15 @@ def handle_get(handler, parsed) -> bool:
                 "threshold_tokens": getattr(s, "threshold_tokens", 0) or 0,
                 "last_prompt_tokens": getattr(s, "last_prompt_tokens", 0) or 0,
             }
+            if _merged_last_message_at:
+                raw["last_message_at"] = max(
+                    float(raw.get("last_message_at") or 0),
+                    _merged_last_message_at,
+                )
+                raw["updated_at"] = max(
+                    float(raw.get("updated_at") or 0),
+                    _merged_last_message_at,
+                )
             if cli_meta and _is_messaging_session_record(cli_meta):
                 raw = _merge_cli_sidebar_metadata(raw, cli_meta)
             # Signal to the frontend that older messages were omitted.
