@@ -1531,6 +1531,9 @@ function attachLiveStream(activeSid, streamId, uploaded=[], options={}){
           phase:'done',
           automatic:true,
           message,
+          engine:d.engine,
+          mode:d.mode,
+          details:d.details,
           summary:{headline:message},
         });
       }
