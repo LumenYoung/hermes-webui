@@ -1,0 +1,44 @@
+generated_at: '2026-05-14T23:32:05Z'
+base:
+  remote: origin
+  branch: master
+  sha: 5e518b1c10836886f9a1abc7c06af5a3fec961d7
+deploy_branch: deploy/local-composed
+prs:
+- number: 2183
+  url: https://github.com/nesquena/hermes-webui/pull/2183
+  branch: fix/chat-start-preserve-sidecar
+  head: 11c3a9c4e0b8d449f19cb0b16a6c620597f889f5
+  commits:
+  - e642ba7995d215b0b3270046baca9877779cfea5
+  - 11c3a9c4e0b8d449f19cb0b16a6c620597f889f5
+  skipped_merge_commits:
+  - ca8644a2d4680c3da529a33e21ffe9e3ee26272a
+- number: 2194
+  url: https://github.com/nesquena/hermes-webui/pull/2194
+  branch: feat/api-server-session-consistency
+  head: fcdccd08138a96731f8f5c23063d131d871382e9
+  commits:
+  - 02b3c62125da595d5400b70fa20e70c86b695589
+  - 1e020ade785d7b74de97dd35523b8c73b32a73de
+  - fbb6dc51240e6452589cfc652e5d01b10ab37ee2
+  - 5bde2b286c7009099c71b128fdf813e7306d41a7
+  - c2203c5da5f8debb817d29016d18181ac5a23bce
+  - fcdccd08138a96731f8f5c23063d131d871382e9
+  skipped_merge_commits: []
+- number: 2266
+  url: https://github.com/nesquena/hermes-webui/pull/2266
+  branch: feat/lcm-context-engine-support
+  head: 3e7bebd51e0beb0c2d80cf2e239d70775f69dbf6
+  commits:
+  - 48bd2539d147600c8a8c2fe929c759d63ca8bbbf
+  - 92ffc063c07cb138d81637566f6b20ea7d1180ed
+  - 3e7bebd51e0beb0c2d80cf2e239d70775f69dbf6
+  skipped_merge_commits: []
+notes:
+- Generated from upstream master plus open LumenYoung PR branches.
+- Merge commits in PR ranges are skipped; their upstream-side changes are already
+  represented by origin/master or by following non-merge commits.
+- 'Resolved two additive conflicts: PR #2183 sidecar-preservation hook with upstream
+  provisional title generation, and PR #2194 messaging display merge with PR #2183
+  longer-sidecar preservation.'
